@@ -1,0 +1,185 @@
+name: Promote Snowflake Code
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "snowflake/**"
+      - "deployment/**"
+      - ".github/workflows/promote.yml"
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: snowflake-environment-promotion
+  cancel-in-progress: false
+
+jobs:
+  deploy-dev:
+    name: Deploy to DEV
+    runs-on: ubuntu-latest
+    environment: dev
+
+    env:
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: SVC_CICD_DEV
+      SNOWFLAKE_ROLE: FR_DEVOPS_DEV
+      SNOWFLAKE_WAREHOUSE: WH_DEVOPS
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Configure Snowflake CLI with OIDC
+        uses: snowflakedb/snowflake-actions@v3
+        with:
+          use-oidc: true
+          cli-version: "3.16"
+
+      - name: Test Snowflake connection
+        run: snow connection test -x
+
+      - name: Fetch commit into Snowflake
+        run: |
+          snow sql -x -q "
+            ALTER GIT REPOSITORY
+              COMMON.DEVOPS.\"sco-data-ai-platform\"
+              FETCH;
+          "
+
+      - name: Deploy exact commit to DEV
+        run: |
+          snow sql -x -q "
+            EXECUTE IMMEDIATE FROM
+              @COMMON.DEVOPS.\"sco-data-ai-platform\"/commits/${GITHUB_SHA}/deployment/deploy.sql
+            USING
+            (
+              bronze_database => 'BRONZE_DEV',
+              silver_database => 'SILVER_DEV',
+              gold_database   => 'GOLD_DEV'
+            );
+          "
+
+      - name: Verify DEV deployment
+        run: |
+          snow sql -x -q "
+            SELECT *
+            FROM GOLD_DEV.ANALYTICS.VW_DEVOPS_TEST_SUMMARY;
+          "
+
+  deploy-uat:
+    name: Deploy to UAT
+    needs: deploy-dev
+    runs-on: ubuntu-latest
+    environment: uat
+
+    env:
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: SVC_CICD_UAT
+      SNOWFLAKE_ROLE: FR_DEVOPS_UAT
+      SNOWFLAKE_WAREHOUSE: WH_DEVOPS
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Configure Snowflake CLI with OIDC
+        uses: snowflakedb/snowflake-actions@v3
+        with:
+          use-oidc: true
+          cli-version: "3.16"
+
+      - name: Test Snowflake connection
+        run: snow connection test -x
+
+      - name: Fetch commit into Snowflake
+        run: |
+          snow sql -x -q "
+            ALTER GIT REPOSITORY
+              COMMON.DEVOPS.\"sco-data-ai-platform\"
+              FETCH;
+          "
+
+      - name: Deploy exact commit to UAT
+        run: |
+          snow sql -x -q "
+            EXECUTE IMMEDIATE FROM
+              @COMMON.DEVOPS.\"sco-data-ai-platform\"/commits/${GITHUB_SHA}/deployment/deploy.sql
+            USING
+            (
+              bronze_database => 'BRONZE_UAT',
+              silver_database => 'SILVER_UAT',
+              gold_database   => 'GOLD_UAT'
+            );
+          "
+
+      - name: Verify UAT deployment
+        run: |
+          snow sql -x -q "
+            SELECT *
+            FROM GOLD_UAT.ANALYTICS.VW_DEVOPS_TEST_SUMMARY;
+          "
+
+  deploy-prod:
+    name: Deploy to PROD
+    needs: deploy-uat
+    runs-on: ubuntu-latest
+    environment: prod
+
+    env:
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: SVC_CICD_PROD
+      SNOWFLAKE_ROLE: FR_DEVOPS_PROD
+      SNOWFLAKE_WAREHOUSE: WH_DEVOPS
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Configure Snowflake CLI with OIDC
+        uses: snowflakedb/snowflake-actions@v3
+        with:
+          use-oidc: true
+          cli-version: "3.16"
+
+      - name: Test Snowflake connection
+        run: snow connection test -x
+
+      - name: Fetch commit into Snowflake
+        run: |
+          snow sql -x -q "
+            ALTER GIT REPOSITORY
+              COMMON.DEVOPS.\"sco-data-ai-platform\"
+              FETCH;
+          "
+
+      - name: Deploy exact commit to PROD
+        run: |
+          snow sql -x -q "
+            EXECUTE IMMEDIATE FROM
+              @COMMON.DEVOPS.\"sco-data-ai-platform\"/commits/${GITHUB_SHA}/deployment/deploy.sql
+            USING
+            (
+              bronze_database => 'BRONZE_PROD',
+              silver_database => 'SILVER_PROD',
+              gold_database   => 'GOLD_PROD'
+            );
+          "
+
+      - name: Verify PROD deployment
+        run: |
+          snow sql -x -q "
+            SELECT *
+            FROM GOLD_PROD.ANALYTICS.VW_DEVOPS_TEST_SUMMARY;
+          "
