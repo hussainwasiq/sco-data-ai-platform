@@ -54,6 +54,22 @@ jobs:
               FETCH;
           "
 
+      - name: Verify Snowflake DEV context
+        run: |
+          snow sql -x -q "
+            SELECT
+              CURRENT_USER() AS USER_NAME,
+              CURRENT_ROLE() AS ACTIVE_ROLE,
+              CURRENT_WAREHOUSE() AS ACTIVE_WAREHOUSE,
+              CURRENT_SECONDARY_ROLES() AS SECONDARY_ROLES,
+              IS_DATABASE_ROLE_IN_SESSION(
+                'SNOWFLAKE.PYPI_REPOSITORY_USER'
+              ) AS HAS_PYPI_ACCESS;
+
+            DESCRIBE ARTIFACT REPOSITORY
+              SNOWFLAKE.SNOWPARK.PYPI_SHARED_REPOSITORY;
+          "
+
       - name: Deploy exact commit to DEV
         run: |
           snow sql -x -q "
